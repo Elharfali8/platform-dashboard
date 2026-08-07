@@ -20,3 +20,25 @@ export async function login(
 
   return response.data;
 }
+
+export type ChangePasswordData = {
+  currentPassword: string;
+  newPassword: string;
+};
+
+export async function changePassword(
+  data: ChangePasswordData,
+  accessToken: string,
+) {
+  const response = await api.post(
+    "/auth/change-password",
+    data,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  return response.data;
+}

@@ -43,7 +43,7 @@ const LoginForm = () => {
       });
 
       if (response.mustChangePassword) {
-        router.push("/change-password");
+        router.push("/auth/change-password");
         return;
       }
 
