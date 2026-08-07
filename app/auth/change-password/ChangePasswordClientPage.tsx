@@ -95,7 +95,7 @@ const setAuth = useAuthStore((state) => state.setAuth);
       mustChangePassword: false,
     });
 
-    router.push("/dashboard");
+    router.push("/processing");
   } catch {
     setError("Unable to change password. Please try again.");
   } finally {

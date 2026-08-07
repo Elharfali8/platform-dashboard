@@ -42,3 +42,42 @@ export async function changePassword(
 
   return response.data;
 }
+
+
+export type ApplicationMembership = {
+  membershipId: string;
+  role: "OWNER" | "ADMIN" | "DRIVER" | "STAFF" | "USER";
+  application: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+};
+
+export type ProfileResponse = {
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string | null;
+    platformRole: "PLATFORM_OWNER" | "PLATFORM_ADMIN" | "MEMBER";
+    mustChangePassword: boolean;
+  };
+  applications: ApplicationMembership[];
+};
+
+
+export async function getProfile(
+  accessToken: string,
+): Promise<ProfileResponse> {
+  const response = await api.get<ProfileResponse>(
+    "/auth/profile",
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  return response.data;
+}

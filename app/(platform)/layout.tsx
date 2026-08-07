@@ -1,9 +1,14 @@
-import React from 'react'
+import AuthGuard from "@/components/auth/AuthGuard";
 
-const layout = () => {
+export default function PlatformLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <div>layout</div>
-  )
+    <AuthGuard>
+      {/* Sidebar / Navbar */}
+      {children}
+    </AuthGuard>
+  );
 }
-
-export default layout

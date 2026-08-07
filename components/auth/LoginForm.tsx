@@ -47,7 +47,7 @@ const LoginForm = () => {
         return;
       }
 
-      router.push("/dashboard");
+      router.push("/processing");
     } catch (error) {
          if (error instanceof AxiosError) {
         const data = error.response?.data as
