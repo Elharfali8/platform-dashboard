@@ -12,10 +12,10 @@ const PageTitle = ({
   return (
     <div className="flex items-center gap-3">
       {Icon && (
-        <Icon className="size-6 text-primary" />
+        <Icon className="size-8 text-primary" />
       )}
 
-      <h2 className="text-xl font-semibold capitalize lg:text-2xl">
+      <h2 className="text-xl font-semibold capitalize lg:text-3xl">
         {title}
       </h2>
     </div>

@@ -3,7 +3,7 @@ import DriversClientPage from './DriversClientPage'
 
 const page = () => {
   return (
-    <main>
+    <main className=''>
         <DriversClientPage />
     </main>
   )

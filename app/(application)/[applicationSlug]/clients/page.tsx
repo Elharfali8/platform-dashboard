@@ -1,8 +1,11 @@
 import React from 'react'
+import ClientsClientPage from './ClientsClientPage'
 
 const page = () => {
   return (
-    <div>page</div>
+    <main>
+      <ClientsClientPage />
+    </main>
   )
 }
 
