@@ -1,4 +1,5 @@
 import AuthGuard from "@/components/auth/AuthGuard";
+import { PlatformShell } from "@/components/platform/PlatformShell";
 
 export default function PlatformLayout({
   children,
@@ -7,8 +8,7 @@ export default function PlatformLayout({
 }) {
   return (
     <AuthGuard>
-      {/* Sidebar / Navbar */}
-      {children}
+      <PlatformShell>{children}</PlatformShell>
     </AuthGuard>
   );
 }
