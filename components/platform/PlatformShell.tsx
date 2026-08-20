@@ -20,6 +20,7 @@ export function PlatformShell({ children }: PlatformShellProps) {
   const [platformRole, setPlatformRole] = useState<
     "PLATFORM_OWNER" | "PLATFORM_ADMIN" | "MEMBER" | null
   >(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!accessToken) {
@@ -32,6 +33,7 @@ export function PlatformShell({ children }: PlatformShellProps) {
       .then((profile) => {
         if (!cancelled) {
           setPlatformRole(profile.user.platformRole);
+          setProfileError(null);
         }
       })
       .catch((error) => {
@@ -44,7 +46,14 @@ export function PlatformShell({ children }: PlatformShellProps) {
           router.replace(
             `/auth/login?redirect=${encodeURIComponent(pathname)}`,
           );
+          return;
         }
+
+        // Leaving platformRole unset hides role-gated nav items (e.g.
+        // "Applications"), so surface the failure instead of failing silently.
+        setProfileError(
+          "Could not load your account. Some navigation items may be hidden — try refreshing.",
+        );
       });
 
     return () => {
@@ -65,6 +74,11 @@ export function PlatformShell({ children }: PlatformShellProps) {
 
       <div className="min-h-screen lg:pl-64">
         <main className="mx-auto w-full max-w-[1680px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+          {profileError ? (
+            <div className="mb-4 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-danger">
+              {profileError}
+            </div>
+          ) : null}
           {children}
         </main>
       </div>

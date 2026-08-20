@@ -1,8 +1,11 @@
 import React from 'react'
+import DashboardClientPage from './DashboardClientPage'
 
 const page = () => {
   return (
-    <div>page</div>
+    <main>
+      <DashboardClientPage />
+    </main>
   )
 }
 

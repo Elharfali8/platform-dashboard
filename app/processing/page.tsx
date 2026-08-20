@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { getProfile } from "@/services/auth.service";
 import { useAuthStore } from "@/store/auth.store";
 
+const PLATFORM_ROLES = new Set(["PLATFORM_OWNER", "PLATFORM_ADMIN"]);
+
 export default function ProcessingPage() {
   const router = useRouter();
 
@@ -18,7 +20,7 @@ export default function ProcessingPage() {
   useEffect(() => {
     async function resolveUser() {
       if (!accessToken) {
-        router.replace("/login");
+        router.replace("/auth/login");
         return;
       }
 
@@ -26,15 +28,14 @@ export default function ProcessingPage() {
         const profile = await getProfile(accessToken);
 
         if (profile.user.mustChangePassword) {
-          router.replace("/change-password");
+          router.replace("/auth/change-password");
           return;
         }
 
-        if (
-          profile.user.platformRole === "PLATFORM_OWNER" ||
-          profile.user.platformRole === "PLATFORM_ADMIN"
-        ) {
-          router.replace("/platform/dashboard");
+        // Platform-level roles always land on the platform area, regardless
+        // of whether they also happen to hold an application membership.
+        if (PLATFORM_ROLES.has(profile.user.platformRole)) {
+          router.replace("/dashboard");
           return;
         }
 
@@ -48,11 +49,10 @@ export default function ProcessingPage() {
           return;
         }
 
-        // we'll improve this state later
-        console.error("No application assigned");
+        router.replace("/no-access");
       } catch {
         logout();
-        router.replace("/login");
+        router.replace("/auth/login");
       }
     }
 
