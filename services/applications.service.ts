@@ -117,3 +117,48 @@ export async function createApplicationOwner({
 
   return response.data;
 }
+
+export type UpdateApplicationData = {
+  name?: string;
+  /** For a riad this is also its booking site address: localhost:3030/<slug> */
+  slug?: string;
+  isActive?: boolean;
+};
+
+/** Platform owner: PATCH /platform/applications/:id */
+export async function updateApplication({
+  accessToken,
+  applicationId,
+  data,
+}: {
+  accessToken: string;
+  applicationId: string;
+  data: UpdateApplicationData;
+}): Promise<Application> {
+  const response = await api.patch<Application>(
+    `/platform/applications/${applicationId}`,
+    data,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  return response.data;
+}
+
+/**
+ * Platform owner: DELETE /platform/applications/:id. Deletes everything in it.
+ * Refused (409) when it has bookings or transactions: deactivate it instead.
+ */
+export async function deleteApplication({
+  accessToken,
+  applicationId,
+}: {
+  accessToken: string;
+  applicationId: string;
+}): Promise<Application> {
+  const response = await api.delete<Application>(
+    `/platform/applications/${applicationId}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  return response.data;
+}

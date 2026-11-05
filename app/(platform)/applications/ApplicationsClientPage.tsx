@@ -2,13 +2,14 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { isAxiosError } from "axios";
-import { Building2, Copy, Eye, EyeOff, Plus, RefreshCw } from "lucide-react";
+import { Building2, Copy, Eye, EyeOff, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 import PageTitle from "@/components/applications/global/PageTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { EditApplicationModal, DeleteApplicationModal } from "@/components/platform/ApplicationModals";
 import {
   createApplication,
   createApplicationOwner,
@@ -93,6 +94,11 @@ const ApplicationsClientPage = () => {
   useEffect(() => {
     fetchApplications();
   }, [fetchApplications]);
+
+  // EDIT / DELETE
+  const [editing, setEditing] = useState<Application | null>(null);
+  const [deleting, setDeleting] = useState<Application | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // CREATE APPLICATION WIZARD
   const [createModal, setCreateModal] = useState(false);
@@ -253,6 +259,12 @@ const ApplicationsClientPage = () => {
         </Button>
       </div>
 
+      {notice ? (
+        <div className="mt-4 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-success">
+          {notice}
+        </div>
+      ) : null}
+
       <section className="mt-5 rounded-lg border border-border bg-surface p-4 shadow-[var(--card-shadow)] lg:mt-8">
         {error ? (
           <div className="mb-4 rounded-lg border border-danger/30 bg-danger/5 p-4 text-sm text-danger">
@@ -278,6 +290,7 @@ const ApplicationsClientPage = () => {
                   <th className="py-2 pr-4 font-medium">Slug</th>
                   <th className="py-2 pr-4 font-medium">Status</th>
                   <th className="py-2 pr-4 font-medium">Created</th>
+                  <th className="py-2 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -320,6 +333,30 @@ const ApplicationsClientPage = () => {
                     <td className="py-3 pr-4 text-muted-foreground">
                       {new Date(application.createdAt).toLocaleDateString()}
                     </td>
+                    <td className="py-3 text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setEditing(application)}
+                          aria-label={`Edit ${application.name}`}
+                          title="Edit"
+                        >
+                          <Pencil size={14} />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          onClick={() => setDeleting(application)}
+                          aria-label={`Delete ${application.name}`}
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -336,6 +373,30 @@ const ApplicationsClientPage = () => {
           </div>
         )}
       </section>
+
+      {editing ? (
+        <EditApplicationModal
+          application={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(saved) => {
+            setApplications((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+            setEditing(null);
+            setNotice(`${saved.name} updated.`);
+          }}
+        />
+      ) : null}
+
+      {deleting ? (
+        <DeleteApplicationModal
+          application={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={(deleted) => {
+            setApplications((prev) => prev.filter((item) => item.id !== deleted.id));
+            setDeleting(null);
+            setNotice(`${deleted.name} (${deleted.slug}) deleted.`);
+          }}
+        />
+      ) : null}
 
       {createModal && (
         <div

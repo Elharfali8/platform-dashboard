@@ -1,4 +1,4 @@
-import { Building2, LayoutDashboard } from "lucide-react";
+import { Building2, LayoutDashboard, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type PlatformNavItem = {
@@ -18,6 +18,12 @@ export const platformNavigation: PlatformNavItem[] = [
     label: "Applications",
     href: "/applications",
     icon: Building2,
+    requiresPlatformOwner: true,
+  },
+  {
+    label: "Users",
+    href: "/users",
+    icon: Users,
     requiresPlatformOwner: true,
   },
 ];
