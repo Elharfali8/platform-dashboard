@@ -1,31 +1,81 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { Power } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Alert, DangerButton, PrimaryButton, SecondaryButton, fieldClass } from "@/components/platform/ui";
+import { cn } from "@/lib/utils";
 import { useApiError } from "@/lib/use-api-error";
 import { deleteApplication, updateApplication, type Application } from "@/services/applications.service";
 import { useAuthStore } from "@/store/auth.store";
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+export function Field({
+  id,
+  label,
+  hint,
+  children,
+}: {
+  id: string;
+  label: string;
+  hint?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-lg rounded-xl bg-background p-6 shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        {children}
-      </div>
+    <div className="grid gap-1.5">
+      <label htmlFor={id} className="text-[13px] font-medium text-slate-700">
+        {label}
+      </label>
+      {children}
+      {hint ? <p className="text-xs text-slate-500">{hint}</p> : null}
     </div>
   );
 }
 
-/** Platform owner: rename, change the slug, or turn the application on/off. */
-export function EditApplicationModal({
+/** An on/off switch with a label and an explanation. */
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  description,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-start gap-3 rounded-xl border border-slate-200 p-3.5 text-left transition hover:border-slate-300 hover:bg-slate-50/60"
+    >
+      <span
+        className={cn(
+          "relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200",
+          checked ? "bg-gradient-to-r from-indigo-500 to-violet-500" : "bg-slate-200",
+        )}
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform duration-200",
+            checked ? "translate-x-[18px]" : "translate-x-0.5",
+          )}
+        />
+      </span>
+      <span>
+        <span className="block text-sm font-medium text-slate-900">{label}</span>
+        <span className="block text-xs text-slate-500">{description}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Platform owner: rename, change the slug, or switch the application on/off. */
+export function EditApplicationForm({
   application,
   onClose,
   onSaved,
@@ -69,123 +119,136 @@ export function EditApplicationModal({
   const unchanged = name.trim() === application.name && slug === application.slug && isActive === application.isActive;
 
   return (
-    <Modal onClose={onClose}>
-      <form onSubmit={submit} className="grid gap-4">
-        <div className="mb-2">
-          <h2 className="text-xl font-semibold">Edit Application</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{application.slug}</p>
-        </div>
-        {error ? (
-          <div className="rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-danger">{error}</div>
-        ) : null}
-        <div className="grid gap-2">
-          <Label htmlFor="edit-app-name">Name</Label>
-          <Input id="edit-app-name" value={name} onChange={(event) => setName(event.target.value)} required />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="edit-app-slug">Slug</Label>
-          <Input
-            id="edit-app-slug"
-            value={slug}
-            onChange={(event) => setSlug(event.target.value.toLowerCase())}
-            required
-          />
-          <p className="text-xs text-muted-foreground">
-            For a riad this is also its booking site address: localhost:3030/{slug || "slug"}. Old links stop working
+    <form onSubmit={submit} className="grid gap-4">
+      {error ? <Alert>{error}</Alert> : null}
+      <Field id="edit-app-name" label="Name">
+        <input id="edit-app-name" value={name} onChange={(event) => setName(event.target.value)} required className={fieldClass} />
+      </Field>
+      <Field
+        id="edit-app-slug"
+        label="Slug"
+        hint={
+          <>
+            For a riad this is its booking site address:{" "}
+            <span className="font-mono text-slate-700">localhost:3030/{slug || "slug"}</span>. Old links stop working
             when it changes.
-          </p>
-        </div>
-        <label className="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
-          <input
-            type="checkbox"
-            checked={isActive}
-            onChange={(event) => setIsActive(event.target.checked)}
-            className="mt-0.5 size-4"
-          />
-          <span>
-            <span className="block font-medium">Active</span>
-            <span className="block text-xs text-muted-foreground">
-              When off, nobody can open it and its public pages are hidden. Nothing is deleted.
-            </span>
-          </span>
-        </label>
-        <div className="mt-2 flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={saving || unchanged} className="bg-blue-500 hover:bg-blue-600">
-            {saving ? "Saving..." : "Save"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+          </>
+        }
+      >
+        <input
+          id="edit-app-slug"
+          value={slug}
+          onChange={(event) => setSlug(event.target.value.toLowerCase())}
+          required
+          className={cn(fieldClass, "font-mono")}
+        />
+      </Field>
+      <Toggle
+        checked={isActive}
+        onChange={setIsActive}
+        label="Active"
+        description="When off, nobody can open it and its public pages are hidden. Nothing is deleted."
+      />
+      <div className="mt-2 flex justify-end gap-2">
+        <SecondaryButton type="button" onClick={onClose} disabled={saving}>
+          Cancel
+        </SecondaryButton>
+        <PrimaryButton type="submit" disabled={saving || unchanged}>
+          {saving ? "Saving…" : "Save changes"}
+        </PrimaryButton>
+      </div>
+    </form>
   );
 }
 
 /** Platform owner: deletes the application and everything in it. Type the slug to confirm. */
-export function DeleteApplicationModal({
+export function DeleteApplicationForm({
   application,
   onClose,
   onDeleted,
+  onDeactivate,
 }: {
   application: Application;
   onClose: () => void;
   onDeleted: (application: Application) => void;
+  /** Offered when the API refuses (bookings or transactions). */
+  onDeactivate: (application: Application) => void;
 }) {
   const accessToken = useAuthStore((state) => state.accessToken);
   const apiError = useApiError();
   const [typed, setTyped] = useState("");
-  const [deleting, setDeleting] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState(false);
 
   async function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!accessToken || typed !== application.slug) return;
-    setDeleting(true);
+    setBusy(true);
     setError(null);
     try {
       onDeleted(await deleteApplication({ accessToken, applicationId: application.id }));
     } catch (deleteError) {
-      setError(apiError(deleteError, "Could not delete the application."));
-      setDeleting(false);
+      const message = apiError(deleteError, "Could not delete the application.");
+      setError(message);
+      setBlocked(/deactivate/i.test(message));
+      setBusy(false);
+    }
+  }
+
+  async function deactivate() {
+    if (!accessToken) return;
+    setBusy(true);
+    try {
+      onDeactivate(
+        await updateApplication({ accessToken, applicationId: application.id, data: { isActive: false } }),
+      );
+    } catch (updateError) {
+      setError(apiError(updateError, "Could not deactivate the application."));
+      setBusy(false);
     }
   }
 
   return (
-    <Modal onClose={onClose}>
-      <form onSubmit={confirm} className="grid gap-4">
-        <div className="mb-2">
-          <h2 className="text-xl font-semibold">Delete {application.name}?</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{application.slug}</p>
-        </div>
-        {error ? (
-          <div className="rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-danger">{error}</div>
-        ) : null}
-        <p className="text-sm text-muted-foreground">
-          This deletes the application with everything in it: who can access it, rooms, experiences, clients, drivers
-          and their photos. User accounts stay. It can&apos;t be undone. Applications with bookings or transactions
-          can&apos;t be deleted; turn off <span className="font-medium">Active</span> instead.
-        </p>
-        <div className="grid gap-2">
-          <Label htmlFor="delete-app-confirm">
-            Type <span className="font-mono">{application.slug}</span> to confirm
-          </Label>
-          <Input
-            id="delete-app-confirm"
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-            autoComplete="off"
-          />
-        </div>
-        <div className="mt-2 flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={deleting}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="destructive" disabled={deleting || typed !== application.slug}>
-            {deleting ? "Deleting..." : "Delete Application"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+    <form onSubmit={confirm} className="grid gap-4">
+      {error ? (
+        <Alert>
+          {error}
+          {blocked && application.isActive ? (
+            <button
+              type="button"
+              onClick={deactivate}
+              disabled={busy}
+              className="mt-2 flex items-center gap-1.5 font-medium text-rose-800 underline-offset-2 hover:underline"
+            >
+              <Power className="size-3.5" />
+              Deactivate it instead
+            </button>
+          ) : null}
+        </Alert>
+      ) : null}
+      <p className="text-sm leading-relaxed text-slate-600">
+        This deletes the application with everything in it: who can access it, rooms, experiences, clients, drivers and
+        their photos. User accounts stay. <span className="font-medium text-slate-900">This can&apos;t be undone.</span>
+      </p>
+      <Field id="delete-app-confirm" label={`Type ${application.slug} to confirm`}>
+        <input
+          id="delete-app-confirm"
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+          autoComplete="off"
+          placeholder={application.slug}
+          className={cn(fieldClass, "font-mono")}
+        />
+      </Field>
+      <div className="mt-2 flex justify-end gap-2">
+        <SecondaryButton type="button" onClick={onClose} disabled={busy}>
+          Cancel
+        </SecondaryButton>
+        <DangerButton type="submit" disabled={busy || typed !== application.slug}>
+          {busy ? "Deleting…" : "Delete application"}
+        </DangerButton>
+      </div>
+    </form>
   );
 }

@@ -1,640 +1,319 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { isAxiosError } from "axios";
-import { Building2, Copy, Eye, EyeOff, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
-
-import PageTitle from "@/components/applications/global/PageTitle";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { EditApplicationModal, DeleteApplicationModal } from "@/components/platform/ApplicationModals";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  createApplication,
-  createApplicationOwner,
-  listApplications,
-  type Application,
-} from "@/services/applications.service";
+  Building2,
+  Check,
+  CheckCircle2,
+  Copy,
+  Pencil,
+  Plus,
+  PowerOff,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+
+import { DeleteApplicationForm, EditApplicationForm } from "@/components/platform/ApplicationModals";
+import { CreateApplicationWizard } from "@/components/platform/CreateApplicationWizard";
+import {
+  Alert,
+  Avatar,
+  Badge,
+  EmptyState,
+  IconButton,
+  Modal,
+  PageHeader,
+  Panel,
+  PrimaryButton,
+  SearchInput,
+  SecondaryButton,
+  SegmentedControl,
+  SkeletonRows,
+  StatCard,
+  Toast,
+  timeAgo,
+  useCopy,
+} from "@/components/platform/ui";
+import { cn } from "@/lib/utils";
+import { useApiError } from "@/lib/use-api-error";
+import { listApplications, type Application } from "@/services/applications.service";
 import { useAuthStore } from "@/store/auth.store";
 
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function generateTemporaryPassword() {
-  const chars =
-    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  const bytes = new Uint32Array(14);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (n) => chars[n % chars.length]).join("");
-}
-
-const EMPTY_APPLICATION_FORM = { name: "", slug: "", logoUrl: "" };
-const EMPTY_OWNER_FORM = {
-  email: "",
-  firstName: "",
-  lastName: "",
-  temporaryPassword: "",
-};
-
-type WizardStep = 1 | 2 | 3 | 4;
+type StatusFilter = "all" | "active" | "inactive";
+type Dialog = { kind: "create" | "edit" | "delete"; application: Application | null; open: boolean };
 
 const ApplicationsClientPage = () => {
-  const pathname = usePathname();
-  const router = useRouter();
   const accessToken = useAuthStore((state) => state.accessToken);
-  const logout = useAuthStore((state) => state.logout);
+  const apiError = useApiError();
+  const { copied, copy } = useCopy();
 
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [applications, setApplications] = useState<Application[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const handleApiError = useCallback(
-    (apiError: unknown, fallbackMessage: string) => {
-      if (isAxiosError<{ message?: string }>(apiError)) {
-        if (apiError.response?.status === 401) {
-          logout();
-          router.replace(
-            `/auth/login?redirect=${encodeURIComponent(pathname)}`,
-          );
-          return "Your session expired. Please sign in again.";
-        }
-
-        return apiError.response?.data?.message ?? fallbackMessage;
-      }
-
-      return apiError instanceof Error ? apiError.message : fallbackMessage;
-    },
-    [logout, pathname, router],
-  );
-
-  const fetchApplications = useCallback(async () => {
-    if (!accessToken) {
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await listApplications({ accessToken });
-      setApplications(response.data);
-    } catch (fetchError) {
-      setError(handleApiError(fetchError, "Could not load applications."));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [accessToken, handleApiError]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [dialog, setDialog] = useState<Dialog>({ kind: "create", application: null, open: false });
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchApplications();
-  }, [fetchApplications]);
-
-  // EDIT / DELETE
-  const [editing, setEditing] = useState<Application | null>(null);
-  const [deleting, setDeleting] = useState<Application | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  // CREATE APPLICATION WIZARD
-  const [createModal, setCreateModal] = useState(false);
-  const [step, setStep] = useState<WizardStep>(1);
-  const [appForm, setAppForm] = useState(EMPTY_APPLICATION_FORM);
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [ownerForm, setOwnerForm] = useState(EMPTY_OWNER_FORM);
-  const [showPassword, setShowPassword] = useState(false);
-  const [createdApplication, setCreatedApplication] =
-    useState<Application | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  function resetWizard() {
-    setStep(1);
-    setAppForm(EMPTY_APPLICATION_FORM);
-    setSlugTouched(false);
-    setOwnerForm({
-      ...EMPTY_OWNER_FORM,
-      temporaryPassword: generateTemporaryPassword(),
-    });
-    setShowPassword(false);
-    setCreatedApplication(null);
-    setSubmitError(null);
-    setCopied(false);
-  }
-
-  function openCreateModal() {
-    resetWizard();
-    setCreateModal(true);
-  }
-
-  function closeCreateModal() {
-    setCreateModal(false);
-  }
-
-  function handleAppFieldChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const { name, value } = event.target;
-
-    setAppForm((prev) => {
-      const next = { ...prev, [name]: value };
-
-      if (name === "name" && !slugTouched) {
-        next.slug = slugify(value);
-      }
-
-      return next;
-    });
-  }
-
-  function handleSlugChange(event: React.ChangeEvent<HTMLInputElement>) {
-    setSlugTouched(true);
-    setAppForm((prev) => ({ ...prev, slug: event.target.value }));
-  }
-
-  function handleOwnerFieldChange(
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) {
-    const { name, value } = event.target;
-    setOwnerForm((prev) => ({ ...prev, [name]: value }));
-  }
-
-  function goToStep2(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStep(2);
-  }
-
-  function goToStep3(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStep(3);
-  }
-
-  async function handleFinalSubmit() {
-    if (!accessToken) {
-      return;
-    }
-
-    setIsSubmitting(true);
-    setSubmitError(null);
-
-    try {
-      let application = createdApplication;
-
-      if (!application) {
-        application = await createApplication({
-          accessToken,
-          data: {
-            name: appForm.name,
-            slug: appForm.slug,
-            logoUrl: appForm.logoUrl.trim() || undefined,
-          },
-        });
-
-        setCreatedApplication(application);
-        setApplications((prev) => [application as Application, ...prev]);
-      }
-
-      await createApplicationOwner({
-        applicationId: application.id,
-        accessToken,
-        data: {
-          email: ownerForm.email,
-          firstName: ownerForm.firstName,
-          lastName: ownerForm.lastName.trim() || undefined,
-          temporaryPassword: ownerForm.temporaryPassword,
-        },
+    if (!accessToken) return;
+    let cancelled = false;
+    listApplications({ accessToken })
+      .then((response) => {
+        if (cancelled) return;
+        setApplications(response.data);
+        setError(null);
+      })
+      .catch((fetchError: unknown) => {
+        if (!cancelled) setError(apiError(fetchError, "Could not load applications."));
+      })
+      .finally(() => {
+        if (!cancelled) setRefreshing(false);
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, apiError, reloadKey]);
 
-      setStep(4);
-    } catch (submitErr) {
-      // If the application step already succeeded, retrying only re-attempts
-      // owner creation instead of re-submitting the (now duplicate) application.
-      setSubmitError(
-        handleApiError(submitErr, "Could not create application."),
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
+  const counts = useMemo(() => {
+    const list = applications ?? [];
+    const active = list.filter((application) => application.isActive).length;
+    return { all: list.length, active, inactive: list.length - active };
+  }, [applications]);
 
-  async function handleCopyCredentials() {
-    const text = `Email: ${ownerForm.email}\nTemporary password: ${ownerForm.temporaryPassword}`;
+  const visible = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return (applications ?? []).filter(
+      (application) =>
+        (status === "all" || application.isActive === (status === "active")) &&
+        (!query || `${application.name} ${application.slug}`.toLowerCase().includes(query)),
+    );
+  }, [applications, search, status]);
 
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API unavailable — credentials are already visible on screen.
-    }
-  }
+  const closeDialog = useCallback(() => setDialog((current) => ({ ...current, open: false })), []);
+  const replace = (saved: Application) =>
+    setApplications((current) => current?.map((item) => (item.id === saved.id ? saved : item)) ?? null);
 
   return (
     <div>
-      <PageTitle title="Applications" icon={Building2} />
-      <div className="my-3 h-px w-full bg-gray-300 lg:my-5" />
+      <PageHeader
+        icon={Building2}
+        eyebrow="Manage"
+        title="Applications"
+        description="Every business on the platform: riads, delivery apps and more."
+        actions={
+          <>
+            <SecondaryButton
+              onClick={() => {
+                setRefreshing(true);
+                setReloadKey((key) => key + 1);
+              }}
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+              Refresh
+            </SecondaryButton>
+            <PrimaryButton onClick={() => setDialog({ kind: "create", application: null, open: true })}>
+              <Plus className="size-4" />
+              New application
+            </PrimaryButton>
+          </>
+        }
+      />
 
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={fetchApplications}
-          disabled={isLoading}
-          className="h-10 gap-2"
-        >
-          <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-
-        <Button
-          type="button"
-          onClick={openCreateModal}
-          className="h-10 gap-2 bg-blue-500 px-6 hover:bg-blue-600"
-        >
-          <Plus size={16} />
-          Create Application
-        </Button>
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <StatCard label="Total" value={counts.all} icon={Building2} tone="indigo" loading={!applications} delay={0.05} />
+        <StatCard label="Active" value={counts.active} icon={CheckCircle2} tone="emerald" loading={!applications} delay={0.1} hint="Open to their team and guests" />
+        <StatCard label="Inactive" value={counts.inactive} icon={PowerOff} tone="slate" loading={!applications} delay={0.15} hint="Switched off, nothing deleted" />
       </div>
 
-      {notice ? (
-        <div className="mt-4 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-success">
-          {notice}
+      {error ? (
+        <div className="mb-4">
+          <Alert>{error}</Alert>
         </div>
       ) : null}
 
-      <section className="mt-5 rounded-lg border border-border bg-surface p-4 shadow-[var(--card-shadow)] lg:mt-8">
-        {error ? (
-          <div className="mb-4 rounded-lg border border-danger/30 bg-danger/5 p-4 text-sm text-danger">
-            {error}
-          </div>
-        ) : null}
+      <Panel bodyClassName="p-0" delay={0.15}>
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by name or slug…" className="w-full sm:w-72" />
+          <SegmentedControl
+            id="app-status"
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: "all", label: "All", count: counts.all },
+              { value: "active", label: "Active", count: counts.active },
+              { value: "inactive", label: "Inactive", count: counts.inactive },
+            ]}
+          />
+        </div>
 
-        {isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <div
-                key={index}
-                className="h-12 animate-pulse rounded-lg border border-border bg-muted/60"
-              />
-            ))}
-          </div>
-        ) : applications.length > 0 ? (
+        {!applications ? (
+          <SkeletonRows />
+        ) : visible.length ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="py-2 pr-4 font-medium">Name</th>
-                  <th className="py-2 pr-4 font-medium">Slug</th>
-                  <th className="py-2 pr-4 font-medium">Status</th>
-                  <th className="py-2 pr-4 font-medium">Created</th>
-                  <th className="py-2 text-right font-medium">Actions</th>
+                <tr className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <th className="px-5 py-3 font-medium">Application</th>
+                  <th className="px-4 py-3 font-medium">Slug</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Created</th>
+                  <th className="px-5 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {applications.map((application) => (
-                  <tr
-                    key={application.id}
-                    className="border-b border-border last:border-0"
-                  >
-                    <td className="py-3 pr-4 font-medium text-foreground">
-                      <div className="flex items-center gap-2">
-                        {application.logoUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={application.logoUrl}
-                            alt=""
-                            className="size-6 rounded object-cover"
-                          />
-                        ) : (
-                          <span className="grid size-6 place-items-center rounded bg-muted text-[10px] font-semibold text-muted-foreground">
-                            {application.name.slice(0, 2).toUpperCase()}
-                          </span>
-                        )}
-                        {application.name}
-                      </div>
-                    </td>
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {application.slug}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          application.isActive
-                            ? "bg-success/10 text-success"
-                            : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {application.isActive ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 text-muted-foreground">
-                      {new Date(application.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="py-3 text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
+                <AnimatePresence initial={false}>
+                  {visible.map((application, index) => (
+                    <motion.tr
+                      key={application.id}
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0, transition: { delay: Math.min(index, 10) * 0.03 } }}
+                      exit={{ opacity: 0, x: -12 }}
+                      className="group border-t border-slate-100 transition-colors hover:bg-indigo-50/30"
+                    >
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={application.name} src={application.logoUrl} size={38} square />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-slate-900">{application.name}</p>
+                            <p className="truncate font-mono text-[11px] text-slate-400">{application.id.slice(0, 8)}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <button
                           type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setEditing(application)}
-                          aria-label={`Edit ${application.name}`}
-                          title="Edit"
+                          onClick={() => copy(application.slug, application.id)}
+                          className="group/slug inline-flex items-center gap-1.5 rounded-lg bg-slate-100/80 px-2 py-1 font-mono text-xs text-slate-600 transition hover:bg-indigo-50 hover:text-indigo-700"
+                          title="Copy slug"
                         >
-                          <Pencil size={14} />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon"
-                          onClick={() => setDeleting(application)}
-                          aria-label={`Delete ${application.name}`}
-                          title="Delete"
-                        >
-                          <Trash2 size={14} />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          /{application.slug}
+                          {copied === application.id ? (
+                            <Check className="size-3 text-emerald-500" />
+                          ) : (
+                            <Copy className="size-3 opacity-0 transition-opacity group-hover/slug:opacity-100" />
+                          )}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <Badge tone={application.isActive ? "emerald" : "slate"} dot>
+                          {application.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <p className="text-slate-700">{new Date(application.createdAt).toLocaleDateString()}</p>
+                        <p className="text-xs text-slate-400">{timeAgo(application.createdAt)}</p>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex justify-end gap-1 opacity-70 transition-opacity group-hover:opacity-100">
+                          <IconButton
+                            onClick={() => setDialog({ kind: "edit", application, open: true })}
+                            aria-label={`Edit ${application.name}`}
+                            title="Edit"
+                          >
+                            <Pencil className="size-4" />
+                          </IconButton>
+                          <IconButton
+                            tone="rose"
+                            onClick={() => setDialog({ kind: "delete", application, open: true })}
+                            aria-label={`Delete ${application.name}`}
+                            title="Delete"
+                          >
+                            <Trash2 className="size-4" />
+                          </IconButton>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
               </tbody>
             </table>
           </div>
+        ) : applications.length ? (
+          <EmptyState icon={Building2} title="No applications match" description="Try another search or filter." />
         ) : (
-          <div className="rounded-lg border border-dashed border-border bg-muted/35 p-8 text-center">
-            <p className="text-sm font-medium text-foreground">
-              No applications yet
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Create the first tenant application to get started.
-            </p>
-          </div>
+          <EmptyState
+            icon={Building2}
+            title="No applications yet"
+            description="Create the first business on the platform and give it an owner."
+            action={
+              <PrimaryButton onClick={() => setDialog({ kind: "create", application: null, open: true })}>
+                <Plus className="size-4" />
+                New application
+              </PrimaryButton>
+            }
+          />
         )}
-      </section>
+      </Panel>
 
-      {editing ? (
-        <EditApplicationModal
-          application={editing}
-          onClose={() => setEditing(null)}
-          onSaved={(saved) => {
-            setApplications((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
-            setEditing(null);
-            setNotice(`${saved.name} updated.`);
-          }}
+      <Modal
+        open={dialog.open && dialog.kind === "create"}
+        onClose={closeDialog}
+        title="New application"
+        description="A few quick steps: type, details, owner."
+        icon={Building2}
+        width="max-w-2xl"
+      >
+        <CreateApplicationWizard
+          applications={applications ?? []}
+          onClose={closeDialog}
+          onCreated={(created) => setApplications((current) => [created, ...(current ?? [])])}
         />
-      ) : null}
+      </Modal>
 
-      {deleting ? (
-        <DeleteApplicationModal
-          application={deleting}
-          onClose={() => setDeleting(null)}
-          onDeleted={(deleted) => {
-            setApplications((prev) => prev.filter((item) => item.id !== deleted.id));
-            setDeleting(null);
-            setNotice(`${deleted.name} (${deleted.slug}) deleted.`);
-          }}
-        />
-      ) : null}
+      <Modal
+        open={dialog.open && dialog.kind === "edit"}
+        onClose={closeDialog}
+        title="Edit application"
+        description={dialog.application ? `/${dialog.application.slug}` : undefined}
+        icon={Pencil}
+      >
+        {dialog.application && dialog.kind === "edit" ? (
+          <EditApplicationForm
+            key={dialog.application.id}
+            application={dialog.application}
+            onClose={closeDialog}
+            onSaved={(saved) => {
+              replace(saved);
+              closeDialog();
+              setToast(`${saved.name} updated.`);
+            }}
+          />
+        ) : null}
+      </Modal>
 
-      {createModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onClick={closeCreateModal}
-        >
-          <div
-            className="w-full max-w-lg rounded-xl bg-background p-6 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold">Create Application</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Step {Math.min(step, 3)} of 3
-              </p>
-            </div>
+      <Modal
+        open={dialog.open && dialog.kind === "delete"}
+        onClose={closeDialog}
+        title={dialog.application ? `Delete ${dialog.application.name}?` : "Delete application"}
+        description={dialog.application ? `/${dialog.application.slug}` : undefined}
+        icon={Trash2}
+        tone="rose"
+      >
+        {dialog.application && dialog.kind === "delete" ? (
+          <DeleteApplicationForm
+            key={dialog.application.id}
+            application={dialog.application}
+            onClose={closeDialog}
+            onDeleted={(deleted) => {
+              setApplications((current) => current?.filter((item) => item.id !== deleted.id) ?? null);
+              closeDialog();
+              setToast(`${deleted.name} deleted.`);
+            }}
+            onDeactivate={(saved) => {
+              replace(saved);
+              closeDialog();
+              setToast(`${saved.name} deactivated.`);
+            }}
+          />
+        ) : null}
+      </Modal>
 
-            {submitError ? (
-              <div className="mb-4 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-danger">
-                {submitError}
-              </div>
-            ) : null}
-
-            {step === 1 && (
-              <form onSubmit={goToStep2} className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Application name</Label>
-                  <Input
-                    id="name"
-                    name="name"
-                    value={appForm.name}
-                    onChange={handleAppFieldChange}
-                    placeholder="Naser Delivery"
-                    required
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="slug">Slug</Label>
-                  <Input
-                    id="slug"
-                    name="slug"
-                    value={appForm.slug}
-                    onChange={handleSlugChange}
-                    placeholder="naser-delivery"
-                    required
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="logoUrl">Logo URL (optional)</Label>
-                  <Input
-                    id="logoUrl"
-                    name="logoUrl"
-                    type="url"
-                    value={appForm.logoUrl}
-                    onChange={handleAppFieldChange}
-                    placeholder="https://..."
-                  />
-                </div>
-
-                <div className="mt-2 flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={closeCreateModal}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="bg-blue-500 hover:bg-blue-600">
-                    Next
-                  </Button>
-                </div>
-              </form>
-            )}
-
-            {step === 2 && (
-              <form onSubmit={goToStep3} className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="email">Owner email</Label>
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    value={ownerForm.email}
-                    onChange={handleOwnerFieldChange}
-                    required
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="firstName">First name</Label>
-                  <Input
-                    id="firstName"
-                    name="firstName"
-                    value={ownerForm.firstName}
-                    onChange={handleOwnerFieldChange}
-                    required
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="lastName">Last name (optional)</Label>
-                  <Input
-                    id="lastName"
-                    name="lastName"
-                    value={ownerForm.lastName}
-                    onChange={handleOwnerFieldChange}
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="temporaryPassword">Temporary password</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="temporaryPassword"
-                      name="temporaryPassword"
-                      type={showPassword ? "text" : "password"}
-                      value={ownerForm.temporaryPassword}
-                      onChange={handleOwnerFieldChange}
-                      required
-                      minLength={8}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setShowPassword((prev) => !prev)}
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="mt-2 flex justify-between gap-2">
-                  <Button type="button" variant="outline" onClick={() => setStep(1)}>
-                    Back
-                  </Button>
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" onClick={closeCreateModal}>
-                      Cancel
-                    </Button>
-                    <Button type="submit" className="bg-blue-500 hover:bg-blue-600">
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              </form>
-            )}
-
-            {step === 3 && (
-              <div className="grid gap-4">
-                <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm">
-                  <p className="font-medium text-foreground">{appForm.name}</p>
-                  <p className="text-muted-foreground">/{appForm.slug}</p>
-                  {appForm.logoUrl ? (
-                    <p className="mt-1 truncate text-muted-foreground">
-                      {appForm.logoUrl}
-                    </p>
-                  ) : null}
-
-                  <div className="my-3 h-px w-full bg-border" />
-
-                  <p className="text-foreground">
-                    {ownerForm.firstName} {ownerForm.lastName}
-                  </p>
-                  <p className="text-muted-foreground">{ownerForm.email}</p>
-                  <p className="text-muted-foreground">
-                    Temporary password: {ownerForm.temporaryPassword}
-                  </p>
-                </div>
-
-                <div className="mt-2 flex justify-between gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setStep(2)}
-                    disabled={isSubmitting}
-                  >
-                    Back
-                  </Button>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={closeCreateModal}
-                      disabled={isSubmitting}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={handleFinalSubmit}
-                      disabled={isSubmitting}
-                      className="bg-blue-500 hover:bg-blue-600"
-                    >
-                      {isSubmitting ? "Creating..." : "Create Application"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {step === 4 && (
-              <div className="grid gap-4">
-                <div className="rounded-lg border border-success/30 bg-success/5 p-4 text-sm">
-                  <p className="font-medium text-foreground">
-                    Application created
-                  </p>
-                  <p className="mt-1 text-muted-foreground">
-                    Hand these credentials to the new owner:
-                  </p>
-                  <div className="mt-3 space-y-1 rounded-lg border border-border bg-background p-3 font-mono text-xs">
-                    <p>Email: {ownerForm.email}</p>
-                    <p>Temporary password: {ownerForm.temporaryPassword}</p>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleCopyCredentials}
-                    className="gap-2"
-                  >
-                    <Copy size={14} />
-                    {copied ? "Copied!" : "Copy credentials"}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={closeCreateModal}
-                    className="bg-blue-500 hover:bg-blue-600"
-                  >
-                    Done
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <Toast message={toast} onDone={() => setToast(null)} />
     </div>
   );
 };
